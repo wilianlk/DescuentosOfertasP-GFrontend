@@ -42,7 +42,7 @@ function metaConcepto(id) {
     switch (id) {
         case "60": // Ventas Brutas (editable)
             return { editable: true };
-        case "80": // Descuentos (usa % de rubro)
+        case "80": // Descuentos
             return {};
         case "100": // Ventas Netas
             return { ...blueBand };
@@ -53,12 +53,12 @@ function metaConcepto(id) {
         case "500": // Gastos Mercadeo y CANALES
         case "600": // Vendedores y Asesoras Belle
         case "920": // Gastos Promoción y Publicidad
-        case "420": // VP Mercadeo
-        case "440": // Admon CANALES
-        case "450": // Operación Logística
-        case "503": // Total Asesoras de Belleza
-        case "505": // Vendedores Público
-        case "506": // Vendedores Salon'in
+        case "420":
+        case "440":
+        case "450":
+        case "503":
+        case "505":
+        case "506":
             return { ...yellowBand };
         case "1000": // Total Gastos de Ventas
             return { ...yellowStrong };
@@ -79,79 +79,41 @@ function metaConcepto(id) {
 export default function DescuentoOfertas() {
     const { apiBaseURL } = getConfig();
 
-    /* Columnas (productos/referencias) – mock como tenías */
-    const [productos, setProductos] = useState([
-        {
-            clienteId: "4000348",
-            clienteNombre: "ALMACENES ÉXITO S.A.",
-            id: "682335",
-            nombre: "Desod Deo Pies Antibact 260ml 20PE Duo",
-            ventasBrutas: 636531342,
-            descuentos: 33228931, // se recalcula desde % si existe rubro 80
-            costoVenta: 205236683,
-            gastos: {
-                mercadoCanales: 82109458, // usados como fallback para % si API no trae rubro
-                vendedoresBelle: 98217633,
-                promoPublicidad: 192755120,
-            },
-            financierosCTO: 18099072, // fallback para % si API no trae rubro 2010
-        },
-        {
-            clienteId: "4000348",
-            clienteNombre: "ALMACENES ÉXITO S.A.",
-            id: "682366",
-            nombre: "Desod Deo Pies Mujeres 260ml 20PE Duo",
-            ventasBrutas: 283177618,
-            descuentos: 14782759,
-            costoVenta: 112289621,
-            gastos: {
-                mercadoCanales: 36528540,
-                vendedoresBelle: 43694683,
-                promoPublicidad: 85752157,
-            },
-            financierosCTO: 8051846,
-        },
-        {
-            clienteId: "4000348",
-            clienteNombre: "ALMACENES ÉXITO S.A.",
-            id: "614763",
-            nombre: "Desod DeoPies Clinic x260ml Pe20 Duo",
-            ventasBrutas: 153909611,
-            descuentos: 8034564,
-            costoVenta: 61875747,
-            gastos: {
-                mercadoCanales: 19853594,
-                vendedoresBelle: 23748458,
-                promoPublicidad: 46607078,
-            },
-            financierosCTO: 4376251,
-        },
-    ]);
-
-    /* Rubros/Conceptos desde la API */
+    /* ======= Estado traído del backend (clientes con rubros + ofertas) ======= */
     const [rubrosClientes, setRubrosClientes] = useState([]);
     const [loadingRubros, setLoadingRubros] = useState(true);
     const [errorRubros, setErrorRubros] = useState("");
 
+    /* AJUSTE: fetch con AbortController para evitar doble llamada en StrictMode */
     useEffect(() => {
+        const controller = new AbortController();
+
         (async () => {
             try {
                 setLoadingRubros(true);
                 setErrorRubros("");
-                const r = await fetch(`${apiBaseURL}/rubros/listar`);
+
+                const r = await fetch(`${apiBaseURL}/rubros/listar`, {
+                    signal: controller.signal,
+                });
+                if (!r.ok) throw new Error(`Error HTTP: ${r.status}`);
+
                 const j = await r.json();
                 const data = Array.isArray(j) ? j : j?.data || [];
                 setRubrosClientes(data);
             } catch (e) {
+                if (e.name === "AbortError") return;
                 console.error(e);
                 setErrorRubros("No se pudieron cargar los rubros.");
             } finally {
                 setLoadingRubros(false);
             }
         })();
+
+        return () => controller.abort();
     }, [apiBaseURL]);
 
-    /* Conceptos dinámicos (unión de todos, con meta de estilo) */
+    /* Conceptos dinámicos (unión de todos + estilos) */
     const conceptos = useMemo(() => {
         const map = new Map();
         rubrosClientes.forEach((c) => {
@@ -172,7 +134,7 @@ export default function DescuentoOfertas() {
         });
     }, [rubrosClientes]);
 
-    /* Rubros editables por cliente */
+    /* Rubros editables por cliente (porcentaje) */
     const [rubrosEdit, setRubrosEdit] = useState({});
     useEffect(() => {
         const obj = {};
@@ -200,62 +162,52 @@ export default function DescuentoOfertas() {
         return typeof v === "number" ? v : fallback;
     };
 
-    const calcularExcelItem = (p, rubrosPctCliente) => {
-        // % DESCUENTO (80)
-        const descPctFallback = p.ventasBrutas ? (p.descuentos / p.ventasBrutas) * 100 : 0;
-        const descuentoPct = getPct(rubrosPctCliente, "80", descPctFallback);
+    // Overrides locales para Ventas Brutas (60) por oferta (sin tocar backend)
+    // estructura: { [clienteId]: { [codigoProducto]: numberOverride } }
+    const [ventasOverride, setVentasOverride] = useState({});
 
-        const descuentos = p.ventasBrutas * (descuentoPct / 100);
+    const calcularExcelItem = (p, rubrosPctCliente) => {
+        // 80 - Descuento (% sobre ventas brutas)
+        const descPct = getPct(rubrosPctCliente, "80", 0);
+        const descuentos = p.ventasBrutas * (descPct / 100);
+
+        // 100 - Ventas Netas
         const ventasNetas = p.ventasBrutas - descuentos;
 
-        // COSTO DE VENTA (200) es valor absoluto
+        // 200 - Costo de Venta (valor)
         const costoVenta = p.costoVenta;
 
-        // UTILIDAD BRUTA (300)
+        // 300 - Utilidad Bruta
         const utilidadBruta = ventasNetas - costoVenta;
 
-        // % de GASTOS sobre VENTAS NETAS (500/600/920)
-        const pct500 = getPct(
-            rubrosPctCliente,
-            "500",
-            ventasNetas ? ((p.gastos?.mercadoCanales || 0) / ventasNetas) * 100 : 0
-        );
-        const pct600 = getPct(
-            rubrosPctCliente,
-            "600",
-            ventasNetas ? ((p.gastos?.vendedoresBelle || 0) / ventasNetas) * 100 : 0
-        );
-        const pct920 = getPct(
-            rubrosPctCliente,
-            "920",
-            ventasNetas ? ((p.gastos?.promoPublicidad || 0) / ventasNetas) * 100 : 0
-        );
+        // 500/600/920 - Gastos (% sobre ventas netas)
+        const pct500 = getPct(rubrosPctCliente, "500", 0);
+        const pct600 = getPct(rubrosPctCliente, "600", 0);
+        const pct920 = getPct(rubrosPctCliente, "920", 0);
 
         const g500 = ventasNetas * (pct500 / 100);
         const g600 = ventasNetas * (pct600 / 100);
         const g920 = ventasNetas * (pct920 / 100);
 
-        // TOTAL GASTOS DE VENTAS (1000)
+        // 1000 - Total Gastos de Ventas
         const totalGastosVentas = g500 + g600 + g920;
 
-        // GASTOS OPERACIÓN (1200) % sobre ventas netas (fallback 11.05)
+        // 1200 - Gastos de Operación (% sobre ventas netas)
         const pct1200 = getPct(rubrosPctCliente, "1200", 11.05);
         const gastosOperacion = ventasNetas * (pct1200 / 100);
 
-        // UTILIDAD OPERACIÓN (1500)
+        // 1500 - Utilidad o pérdida de Operación
         const utilidadOperacion = utilidadBruta - totalGastosVentas - gastosOperacion;
 
-        // FINANCIEROS (2010) % sobre ventas netas (fallback 3% o derivado)
-        const finPctFallback = ventasNetas ? ((p.financierosCTO || 0) / ventasNetas) * 100 : 0;
-        const pct2010 = getPct(rubrosPctCliente, "2010", finPctFallback || 3);
+        // 2010 - Costos Financieros C.T.O. (% sobre ventas netas)
+        const pct2010 = getPct(rubrosPctCliente, "2010", 3);
         const financierosCalc = ventasNetas * (pct2010 / 100);
 
-        // UTILIDAD DESPUÉS DE C.T.O. (2020)
+        // 2020 - Utilidad después de C.T.O.
         const utilidadDespCTO = utilidadOperacion - financierosCalc;
 
         return {
             ...p,
-            // cantidades calculadas:
             descuentos,
             ventasNetas,
             costoVenta,
@@ -271,7 +223,7 @@ export default function DescuentoOfertas() {
         };
     };
 
-    // valor por conceptoId para un producto (ahora usa los campos calculados)
+    // valor por conceptoId para un producto (usa los campos calculados)
     const valorPorConcepto = (conceptoId, p) => {
         switch (conceptoId) {
             case "60":
@@ -305,12 +257,12 @@ export default function DescuentoOfertas() {
         }
     };
 
-    // Base de porcentaje: casi todo sobre ventas netas (como Excel)
+    // Base de porcentaje (Excel): casi todo sobre ventas netas
     const basePorcentaje = (conceptoId, p) => {
         const sobreNetas = new Set([
-            "100", // Ventas netas
-            "200", // Costo de venta
-            "300", // Utilidad bruta
+            "100",
+            "200",
+            "300",
             "500",
             "600",
             "920",
@@ -323,61 +275,92 @@ export default function DescuentoOfertas() {
         return sobreNetas.has(conceptoId) ? p.ventasNetas : p.ventasBrutas;
     };
 
-    /* Agrupar referencias por cliente (para columnas) */
-    const groupByCliente = useMemo(() => {
-        const m = new Map();
-        productos.forEach((p) => {
-            if (!m.has(p.clienteId))
-                m.set(p.clienteId, { nombre: p.clienteNombre, items: [] });
-            m.get(p.clienteId).items.push(p); // guardamos crudo; calculamos dentro de Section con rubros del cliente
-        });
-        return m;
-    }, [productos]);
+    /* ========= Filtros ========= */
 
-    /* Filtros */
-    const [clienteSel, setClienteSel] = useState(ALL);
-    const [query, setQuery] = useState("");
-    const [open, setOpen] = useState(false);
-    const [refQuery, setRefQuery] = useState("");
-
+    // >>> Multi-selección de clientes
     const clientes = useMemo(
         () => rubrosClientes.map((c) => ({ id: c.clienteId, nombre: c.clienteNombre })),
         [rubrosClientes]
     );
 
-    const clientesFiltrados = useMemo(() => {
-        const base = [{ id: ALL, nombre: "Todos los clientes" }, ...clientes];
-        const q = norm(query);
-        if (!q) return base;
-        return base.filter(
-            (c) =>
-                norm(c.id).includes(q) ||
-                norm(c.nombre).includes(q) ||
-                q.includes(norm(c.nombre))
-        );
-    }, [clientes, query]);
+    const [clientesSel, setClientesSel] = useState([ALL]); // ALL = mostrar todos
+    const [open, setOpen] = useState(false);
+    const [queryClientes, setQueryClientes] = useState("");
+    const [refQuery, setRefQuery] = useState("");
 
-    const clearFilter = () => {
-        setClienteSel(ALL);
-        setQuery("");
+    const clientesFiltrados = useMemo(() => {
+        const q = norm(queryClientes);
+        if (!q) return clientes;
+        return clientes.filter(
+            (c) => norm(c.id).includes(q) || norm(c.nombre).includes(q)
+        );
+    }, [clientes, queryClientes]);
+
+    const toggleCliente = (id) => {
+        setClientesSel((prev) => {
+            if (id === ALL) {
+                setOpen(false);
+                return [ALL];
+            }
+            const next = prev.includes(id)
+                ? prev.filter((x) => x !== id)
+                : [...prev.filter((x) => x !== ALL), id];
+            setOpen(false);
+            return next.length === 0 ? [ALL] : next;
+        });
+    };
+
+    const seleccionarTodos = () => {
+        setClientesSel([ALL]);
         setOpen(false);
     };
 
+    const marcarTodos = () => {
+        setClientesSel(clientes.map((c) => c.id));
+        setOpen(false);
+    };
+
+    const limpiarSeleccion = () => {
+        setClientesSel([ALL]); // estado por defecto
+        setOpen(false);
+    };
+
+    const entries = useMemo(
+        () =>
+            clientesSel.includes(ALL)
+                ? rubrosClientes
+                : rubrosClientes.filter((c) => clientesSel.includes(c.clienteId)),
+        [rubrosClientes, clientesSel]
+    );
+
+    const textoSeleccion = clientesSel.includes(ALL)
+        ? "Todos los clientes"
+        : `${clientesSel.length} cliente(s) seleccionados`;
+
     /* ====== Celdas con edición estable ====== */
 
-    // Ventas Brutas: estado local + commit en blur (muestra % según ventasNetas)
-    const VentasBrutasCell = (p) => {
-        const [local, setLocal] = useState(toMilesString(p.ventasBrutas));
+    // Ventas Brutas: estado local + commit en blur (override por oferta)
+    const VentasBrutasCell = ({ clienteId, codigoProducto, valorActual, ventasNetas }) => {
+        const overrideActual =
+            ventasOverride?.[clienteId]?.[codigoProducto] ?? null;
+        const [local, setLocal] = useState(
+            toMilesString(overrideActual ?? valorActual)
+        );
 
         useEffect(() => {
-            setLocal(toMilesString(p.ventasBrutas));
-        }, [p.ventasBrutas]);
+            const ov = ventasOverride?.[clienteId]?.[codigoProducto] ?? null;
+            setLocal(toMilesString(ov ?? valorActual));
+        }, [valorActual, clienteId, codigoProducto, ventasOverride]);
 
         const onBlur = () => {
             const val = toNumberFromMiles(local);
-            setProductos((prev) =>
-                prev.map((x) => (x.id === p.id ? { ...x, ventasBrutas: val } : x))
-            );
+            setVentasOverride((prev) => ({
+                ...prev,
+                [clienteId]: {
+                    ...(prev[clienteId] || {}),
+                    [codigoProducto]: val,
+                },
+            }));
             setLocal(toMilesString(val));
         };
 
@@ -392,11 +375,11 @@ export default function DescuentoOfertas() {
                         onChange={(e) => setLocal(e.target.value)}
                         onBlur={onBlur}
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
-                        aria-label={`Ventas Brutas ${p.id}`}
+                        aria-label={`Ventas Brutas ${codigoProducto}`}
                     />
                     <span className="text-[11px] text-slate-500">
-                        {pct(p.ventasBrutas, p.ventasNetas)}
-                    </span>
+            {pct(overrideActual ?? valorActual, ventasNetas)}
+          </span>
                 </div>
             </td>
         );
@@ -446,50 +429,41 @@ export default function DescuentoOfertas() {
         );
     });
 
-    const ValorCell = (c, p) => {
-        const valor = valorPorConcepto(c.id, p);
-        const base = basePorcentaje(c.id, p);
-        const isMoney = typeof valor === "number";
-        const textClass = isMoney && negativo(valor) ? "text-red-600" : "text-slate-800";
+    /* Sección por cliente (tabla completa) */
+    const Section = ({ cliente }) => {
+        const clienteId = cliente.clienteId;
+        const clienteNombre = cliente.clienteNombre;
 
-        const bandCls =
-            (c.tipo === "band" ? "bg-blue-50 " : "") +
-            (c.band === "y" ? "bg-yellow-50 " : "") +
-            (c.band === "y-strong" ? "bg-yellow-100 " : "");
+        // Ofertas del cliente -> columnas
+        const ofertas = Array.isArray(cliente.ofertas) ? cliente.ofertas : [];
 
-        return (
-            <td className={`px-6 py-3 align-top border-b text-right ${bandCls}`}>
-                {isMoney ? (
-                    <div className="flex items-baseline justify-end gap-2">
-                        <span className={`font-medium ${textClass}`}>{fmtCOP(valor)}</span>
-                        <span className="text-[11px] text-slate-500">
-                            {pct(valor, base)}
-                        </span>
-                    </div>
-                ) : (
-                    <div className="flex items-baseline justify-end gap-2 text-slate-400">
-                        <span>—</span>
-                    </div>
-                )}
-            </td>
-        );
-    };
-
-    /* Sección por cliente (mantiene estilos anteriores) */
-    const Section = ({ clienteId, clienteNombre }) => {
-        const allItems = groupByCliente.get(clienteId)?.items || [];
+        // Filtro por referencia (por código de producto)
         const refQ = norm(refQuery);
-        const itemsFiltradosCrudos = refQ
-            ? allItems.filter(
-                (p) => norm(p.id).includes(refQ) || norm(p.nombre).includes(refQ)
-            )
-            : allItems;
+        const ofertasFiltradas = refQ
+            ? ofertas.filter((o) => norm(o.codigoProducto).includes(refQ))
+            : ofertas;
 
-        // Cálculo estilo Excel usando rubros del cliente
+        // Rubros del cliente (porcentajes)
         const rubrosCliente = rubrosEdit?.[clienteId] || {};
-        const itemsFiltrados = itemsFiltradosCrudos.map((p) =>
-            calcularExcelItem(p, rubrosCliente)
-        );
+
+        // Construir "items" por oferta para cálculos (similar a tus productos antes)
+        const items = ofertasFiltradas.map((o) => {
+            const override =
+                ventasOverride?.[clienteId]?.[o.codigoProducto] ?? null;
+            const ventasBrutas = Number.isFinite(override)
+                ? override
+                : o.totalPrecio || 0;
+            const costoVenta = o.totalCosto || 0;
+
+            const base = {
+                id: o.codigoProducto,
+                codigo: o.codigoProducto,
+                nombre: o.codigoProducto, // (no se toca la lógica original)
+                ventasBrutas,
+                costoVenta,
+            };
+            return calcularExcelItem(base, rubrosCliente);
+        });
 
         return (
             <section className="mb-6">
@@ -498,25 +472,35 @@ export default function DescuentoOfertas() {
                     <div className="text-xl font-bold tracking-wide">{clienteNombre}</div>
                 </div>
 
+                {/* CONTENEDOR SCROLLEABLE con sticky context */}
                 <div className="bg-white rounded-2xl shadow-lg ring-1 ring-black/5">
-                    <div className="overflow-x-auto">
+                    <div className="relative overflow-auto">
                         <table className="min-w-full text-sm">
                             <thead>
                             <tr>
-                                <th className="w-[220px] md:w-[260px] text-left px-4 py-3 bg-blue-50 font-semibold text-slate-700 border-b">
+                                <th className="w-[220px] md:w-[260px] text-left px-4 py-3 bg-blue-50 font-semibold text-slate-700 border-b sticky top-0 z-40">
                                     Concepto
                                 </th>
-                                <th className="w-[140px] text-right px-6 py-3 bg-blue-50 font-semibold text-slate-700 border-b">
+                                <th className="w-[140px] text-right px-6 py-3 bg-blue-50 font-semibold text-slate-700 border-b sticky top-0 z-40">
                                     Rubro (%)
                                 </th>
-                                {itemsFiltrados.map((p) => (
-                                    <th key={p.id} className="px-6 py-3 text-left bg-blue-50 border-b">
-                                        <div className="font-bold text-slate-800">
-                                            {p.id} — {p.nombre.split(" ")[0]}
-                                        </div>
-                                        <div className="text-xs text-slate-500 leading-tight">{p.nombre}</div>
-                                    </th>
-                                ))}
+
+                                {/* Encabezado por oferta - se muestra productoNombre sin cambiar items */}
+                                {items.map((p, idx) => {
+                                    const nombreProducto =
+                                        ofertasFiltradas[idx]?.productoNombre ?? p.nombre;
+                                    return (
+                                        <th
+                                            key={p.id}
+                                            className="px-6 py-3 text-left bg-blue-50 border-b sticky top-0 z-40"
+                                        >
+                                            <div className="font-bold text-slate-800">{p.id}</div>
+                                            <div className="text-xs text-slate-500 leading-tight">
+                                                {nombreProducto}
+                                            </div>
+                                        </th>
+                                    );
+                                })}
                             </tr>
                             </thead>
 
@@ -525,7 +509,8 @@ export default function DescuentoOfertas() {
                                 const conceptBandCls =
                                     (c.tipo === "band" ? "bg-blue-50 " : "") +
                                     (c.band === "y" ? "bg-yellow-50 " : "") +
-                                    (c.band === "y-strong" ? "bg-yellow-100 " : "");
+                                    (c.band === "y-strong" ? "bg-yellow-100 " : "") ||
+                                    "bg-white ";
                                 const conceptTxtCls = [
                                     c.strong ? "font-semibold" : "",
                                     c.emph ? "text-slate-900" : "text-slate-600",
@@ -536,13 +521,18 @@ export default function DescuentoOfertas() {
 
                                 return (
                                     <tr key={c.id} className="group">
-                                        {/* Concepto */}
+                                        {/* Concepto: COLUMNA FIJA */}
                                         <td
                                             className={[
                                                 "px-6 py-3 align-top border-b",
                                                 conceptBandCls,
                                                 conceptTxtCls,
                                                 "w-[220px] md:w-[260px] px-4 whitespace-normal break-words leading-snug",
+                                                "sticky left-0 z-30", // fija primera columna
+                                                // AJUSTE VISUAL: resaltar columna fija sin tocar bandas
+                                                "border-r border-slate-200",
+                                                "shadow-[6px_0_8px_-4px_rgba(0,0,0,0.25)]",
+                                                "font-semibold text-slate-800",
                                             ].join(" ")}
                                         >
                                             {c.nombre}
@@ -556,47 +546,53 @@ export default function DescuentoOfertas() {
                                             setRubrosEdit={setRubrosEdit}
                                         />
 
-                                        {/* Valores por referencia */}
-                                        {itemsFiltrados.map((p) =>
-                                            c.editable ? (
-                                                <VentasBrutasCell key={`${p.id}_${c.id}`} {...p} />
-                                            ) : (
-                                                <td
-                                                    key={`${p.id}_${c.id}`}
-                                                    className={[
-                                                        "px-6 py-3 align-top border-b text-right",
-                                                        c.tipo === "band" ? "bg-blue-50" : "",
-                                                        c.band === "y" ? "bg-yellow-50" : "",
-                                                        c.band === "y-strong" ? "bg-yellow-100" : "",
-                                                    ]
-                                                        .filter(Boolean)
-                                                        .join(" ")}
-                                                >
-                                                    {(() => {
-                                                        const valor = valorPorConcepto(c.id, p);
-                                                        const base = basePorcentaje(c.id, p);
-                                                        const isMoney = typeof valor === "number";
-                                                        const textClass =
-                                                            isMoney && negativo(valor)
-                                                                ? "text-red-600"
-                                                                : "text-slate-800";
-                                                        return isMoney ? (
-                                                            <div className="flex items-baseline justify-end gap-2">
-                                                                    <span className={`font-medium ${textClass}`}>
-                                                                        {fmtCOP(valor)}
-                                                                    </span>
-                                                                <span className="text-[11px] text-slate-500">
-                                                                        {pct(valor, base)}
-                                                                    </span>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="flex items-baseline justify-end gap-2 text-slate-400">
-                                                                <span>—</span>
-                                                            </div>
-                                                        );
-                                                    })()}
-                                                </td>
-                                            )
+                                        {/* Valores por referencia (oferta) */}
+                                        {items.map((p) =>
+                                                c.editable ? (
+                                                    <VentasBrutasCell
+                                                        key={`${p.id}_${c.id}`}
+                                                        clienteId={clienteId}
+                                                        codigoProducto={p.id}
+                                                        valorActual={p.ventasBrutas}
+                                                        ventasNetas={p.ventasNetas}
+                                                    />
+                                                ) : (
+                                                    <td
+                                                        key={`${p.id}_${c.id}`}
+                                                        className={[
+                                                            "px-6 py-3 align-top border-b text-right",
+                                                            c.tipo === "band" ? "bg-blue-50" : "",
+                                                            c.band === "y" ? "bg-yellow-50" : "",
+                                                            c.band === "y-strong" ? "bg-yellow-100" : "",
+                                                        ]
+                                                            .filter(Boolean)
+                                                            .join(" ")}
+                                                    >
+                                                        {(() => {
+                                                            const valor = valorPorConcepto(c.id, p);
+                                                            const base = basePorcentaje(c.id, p);
+                                                            const isMoney = typeof valor === "number";
+                                                            const textClass =
+                                                                isMoney && negativo(valor)
+                                                                    ? "text-red-600"
+                                                                    : "text-slate-800";
+                                                            return isMoney ? (
+                                                                <div className="flex items-baseline justify-end gap-2">
+                                  <span className={`font-medium ${textClass}`}>
+                                    {fmtCOP(valor)}
+                                  </span>
+                                                                    <span className="text-[11px] text-slate-500">
+                                    {pct(valor, base)}
+                                  </span>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="flex items-baseline justify-end gap-2 text-slate-400">
+                                                                    <span>—</span>
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </td>
+                                                )
                                         )}
                                     </tr>
                                 );
@@ -609,7 +605,7 @@ export default function DescuentoOfertas() {
         );
     };
 
-    /* Render principal (misma barra de filtros y colores) */
+    /* Render principal */
     if (loadingRubros) {
         return <div className="w-full text-center py-6 text-slate-500">Cargando…</div>;
     }
@@ -621,57 +617,87 @@ export default function DescuentoOfertas() {
         <div className="w-full overflow-x-auto">
             <div className="mx-auto max-w-[1400px]">
                 {/* Barra de filtros */}
-                <div className="sticky top-0 z-20 pt-3 pb-2 bg-[rgba(248,250,252,0.85)] backdrop-blur supports-[backdrop-filter]:backdrop-blur">
-                    <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
-                        {/* Filtro por cliente */}
+                <div className="sticky top-0 z-[9999] pt-3 pb-2 bg-[rgba(248,250,252,0.95)] backdrop-blur supports-[backdrop-filter]:backdrop-blur shadow-lg">
+                <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+                        {/* Filtro por cliente (multi) */}
                         <div className="flex-1">
                             <div className="text-sm text-slate-400 pl-1 mb-1">Filtrar por cliente</div>
                             <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔎</span>
-                                <input
-                                    type="text"
-                                    value={query}
-                                    onChange={(e) => setQuery(e.target.value)}
-                                    onFocus={() => setOpen(true)}
-                                    placeholder="Todos los clientes (vacío) • o busca: olimpica, éxito..."
-                                    className="w-full pl-9 pr-24 py-2.5 rounded-full border border-slate-200 shadow-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
                                 <button
                                     type="button"
                                     onClick={() => setOpen((v) => !v)}
-                                    className="absolute right-12 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                    aria-label="Abrir lista"
+                                    className="w-full text-left pl-4 pr-10 py-2.5 rounded-full border border-slate-200 shadow-sm bg-white hover:bg-slate-50"
                                 >
-                                    ▼
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={clearFilter}
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs px-2 py-1 rounded-full border border-slate-200 bg-white hover:bg-slate-50"
-                                    title="Mostrar todos"
-                                >
-                                    Limpiar
+                                    {textoSeleccion}
+                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">▼</span>
                                 </button>
 
                                 {open && (
-                                    <ul className="absolute z-30 mt-2 w-full bg-white rounded-xl shadow-lg ring-1 ring-black/5 max-h-64 overflow-auto">
-                                        {[{ id: ALL, nombre: "Todos los clientes" }, ...clientesFiltrados].map((c) => (
-                                            <li
-                                                key={c.id}
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                onClick={() => {
-                                                    setClienteSel(c.id);
-                                                    setQuery(c.id === ALL ? "" : `${c.id} — ${c.nombre}`);
-                                                    setOpen(false);
-                                                }}
-                                                className={`px-4 py-2 cursor-pointer text-sm hover:bg-blue-50 ${
-                                                    c.id === clienteSel ? "bg-blue-50 font-semibold" : ""
-                                                }`}
+                                    <div className="absolute z-[10000] mt-2 w-full max-h-[70vh] overflow-auto bg-white rounded-xl shadow-2xl ring-1 ring-black/10 p-2">
+                                    {/* Acciones */}
+                                        <div className="flex items-center gap-2 px-2 pb-2 text-xs">
+                                            <button
+                                                type="button"
+                                                onClick={seleccionarTodos}
+                                                className="px-2 py-1 rounded border border-slate-200 hover:bg-slate-50"
                                             >
-                                                {c.id === ALL ? "Todos los clientes" : `${c.id} — ${c.nombre}`}
+                                                Seleccionar TODOS
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={marcarTodos}
+                                                className="px-2 py-1 rounded border border-slate-200 hover:bg-slate-50"
+                                            >
+                                                Marcar todos
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={limpiarSeleccion}
+                                                className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50"
+                                            >
+                                                Limpiar selección
+                                            </button>
+                                        </div>
+
+                                        {/* Buscador dentro del menú */}
+                                        <div className="px-2 pb-2">
+                                            <input
+                                                type="text"
+                                                value={queryClientes}
+                                                onChange={(e) => setQueryClientes(e.target.value)}
+                                                placeholder="Buscar cliente…"
+                                                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                            />
+                                        </div>
+
+                                        {/* Lista de clientes */}
+                                        <ul className="max-h-64 overflow-auto">
+                                            <li
+                                                className="flex items-center gap-2 px-4 py-2 hover:bg-blue-50 cursor-pointer"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => toggleCliente(ALL)}
+                                            >
+                                                <input type="checkbox" readOnly checked={clientesSel.includes(ALL)} />
+                                                <span className="text-sm font-semibold">Todos los clientes</span>
                                             </li>
-                                        ))}
-                                    </ul>
+
+                                            {clientesFiltrados.map((c) => {
+                                                const isAll = clientesSel.includes(ALL);
+                                                const checked = isAll ? false : clientesSel.includes(c.id);
+                                                return (
+                                                    <li
+                                                        key={c.id}
+                                                        className="flex items-center gap-2 px-4 py-2 hover:bg-blue-50 cursor-pointer"
+                                                        onMouseDown={(e) => e.preventDefault()}
+                                                        onClick={() => toggleCliente(c.id)}
+                                                    >
+                                                        <input type="checkbox" readOnly checked={checked} />
+                                                        <span className="text-sm">{`${c.id} — ${c.nombre}`}</span>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -679,7 +705,7 @@ export default function DescuentoOfertas() {
                         {/* Filtro por referencia */}
                         <div className="flex-1">
                             <div className="text-sm text-slate-400 pl-1 mb-1">
-                                Filtrar por referencia (ID o nombre)
+                                Filtrar por referencia (código de producto)
                             </div>
                             <div className="relative">
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🧾</span>
@@ -687,7 +713,7 @@ export default function DescuentoOfertas() {
                                     type="text"
                                     value={refQuery}
                                     onChange={(e) => setRefQuery(e.target.value)}
-                                    placeholder="Ej: 682335, 614763 o parte del nombre"
+                                    placeholder="Ej: 682335, 614763 o parte del código"
                                     className="w-full pl-9 pr-24 py-2.5 rounded-full border border-slate-200 shadow-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                                 {refQuery && (
@@ -706,24 +732,10 @@ export default function DescuentoOfertas() {
                 </div>
 
                 {/* Secciones por cliente */}
-                {(() => {
-                    const entries =
-                        clienteSel !== ALL
-                            ? rubrosClientes.filter((c) => c.clienteId === clienteSel)
-                            : rubrosClientes;
-                    return entries.map((c) => (
-                        <Section
-                            key={c.clienteId}
-                            clienteId={c.clienteId}
-                            clienteNombre={c.clienteNombre}
-                        />
-                    ));
-                })()}
+                {entries.map((c) => (
+                    <Section key={c.clienteId} cliente={c} />
+                ))}
 
-                <div className="text-xs text-slate-500 mt-2 px-1">
-                    * Conceptos y porcentajes (Rubro %) vienen del API; los valores
-                    se calculan como en Excel sobre Ventas Netas.
-                </div>
             </div>
         </div>
     );
