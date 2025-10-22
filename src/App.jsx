@@ -1,14 +1,16 @@
-import DescuentoOfertas from "./components/DescuentoOfertas";
+// src/App.jsx
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import MainLayout from "./layouts/MainLayout";
 
-function App() {
+export default function App() {
     return (
-        <div className="p-4 bg-gray-100 min-h-screen">
-            <h1 className="text-2xl font-bold mb-4 text-center text-blue-900">
-                Descuento y Ofertas
-            </h1>
-            <DescuentoOfertas />
-        </div>
+        <Router>
+            <Routes>
+                {/* El layout maneja el contenido interno */}
+                <Route path="/" element={<MainLayout />} />
+                {/* fallback */}
+                <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+        </Router>
     );
 }
-
-export default App;
