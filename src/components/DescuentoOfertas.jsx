@@ -227,6 +227,10 @@ const Section = React.memo(function Section({
         });
     }, [ofertasFiltradas, ventasOverrideCliente, rubrosCliente]);
 
+    // ===== Acordeón SOLO para mostrar "Utilidad o pérdida Operación" (1500) cuando está cerrado =====
+    const [isOpen, setIsOpen] = useState(false);
+    const toggleOpen = () => setIsOpen((v) => !v);
+
     // === celdas ===
     const VentasBrutasCell = React.memo(function VentasBrutasCell({
                                                                       clienteId,
@@ -307,7 +311,7 @@ const Section = React.memo(function Section({
 
     return (
         <section className="mb-6">
-            <div className="rounded-2xl bg-blue-900 text-white px-6 py-4 shadow-sm mt-3 mb-3">
+            <div className="rounded-2xl bg-blue-900 text-white px-6 py-4 shadow-sm mt-3 mb-1">
                 <div className="flex items-center justify-between">
                     <div>
                         <div className="text-sm opacity-90">{clienteId}</div>
@@ -322,100 +326,131 @@ const Section = React.memo(function Section({
                 </div>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-lg ring-1 ring-black/5">
-                <div className="relative overflow-auto max-h-[75vh] will-change-transform">
-                    <table className="min-w-full text-sm border-separate border-spacing-0">
-                        <thead>
-                        <tr>
-                            {/* Columna Concepto fija a la izquierda */}
-                            <th
-                                className="w-[220px] md:w-[260px] text-left px-4 py-3
+            {/* Botón acordeón (abierto/cerrado) */}
+            {isOpen ? (
+                <button
+                    type="button"
+                    onClick={toggleOpen}
+                    className="w-full text-left bg-blue-800 text-white rounded-b-none rounded-t-xl px-6 py-3 mt-1 flex justify-between items-center hover:bg-blue-700 transition-colors shadow-sm"
+                >
+                    <span className="font-semibold"></span>
+                    <span className="text-white text-xs select-none">▼</span>
+                </button>
+            ) : (
+                <button
+                    type="button"
+                    onClick={toggleOpen}
+                    className="w-full text-left bg-blue-50 rounded-2xl shadow ring-1 ring-black/5 px-6 py-4 hover:bg-blue-100 transition-colors flex justify-between items-center"
+                >
+                    <span className="font-semibold text-slate-900">Utilidad o pérdida de Operación</span>
+                    {/* Resumen compacto: una fila 1500 por cada producto (scrollable) */}
+                    <span className="flex items-center gap-4 overflow-x-auto max-w-[60%]">
+            {items.map((p) => {
+                const v = p.utilidadOperacion ?? 0;
+                const base = p.ventasNetas ?? 0;
+                return (
+                    <span key={`res-${p.id}`} className="flex items-baseline gap-2 shrink-0">
+                  <span className={`font-medium ${negativo(v) ? "text-red-600" : "text-slate-800"}`}>
+                    {fmtCOP(v)}
+                  </span>
+                  <span className="text-[11px] text-slate-500">{pct(v, base)}</span>
+                </span>
+                );
+            })}
+          </span>
+                    <span className="text-blue-600 text-xs select-none">▶</span>
+                </button>
+            )}
+
+            {/* Contenido del acordeón */}
+            {isOpen ? (
+                <div className="bg-white rounded-b-2xl shadow-lg ring-1 ring-black/5">
+                    <div className="relative overflow-auto max-h-[75vh] will-change-transform">
+                        <table className="min-w-full text-sm border-separate border-spacing-0">
+                            <thead>
+                            <tr>
+                                {/* Columna Concepto fija a la izquierda */}
+                                <th
+                                    className="w-[220px] md:w-[260px] text-left px-4 py-3
                  bg-blue-50 font-semibold text-slate-700 border-b
                  sticky top-0 left-0 z-[50]
                  shadow-[2px_0_5px_rgba(0,0,0,0.15)]"
-                            >
-                                Concepto
-                            </th>
+                                >
+                                    Concepto
+                                </th>
 
-                            {/* Columna Rubro */}
-                            <th
-                                className="w-[140px] text-right px-6 py-3 bg-blue-50 font-semibold
+                                {/* Columna Rubro */}
+                                <th
+                                    className="w-[140px] text-right px-6 py-3 bg-blue-50 font-semibold
                  text-slate-700 border-b sticky top-0 z-[45]"
-                            >
-                                Rubro (%)
-                            </th>
+                                >
+                                    Rubro (%)
+                                </th>
 
-                            {/* Encabezados de productos (ítems) */}
-                            {items.map((p, idx) => {
-                                const nombreProducto =
-                                    ofertasFiltradas[idx]?.productoNombre ?? p.nombre;
-                                return (
-                                    <th
-                                        key={p.id}
-                                        className="px-6 py-3 bg-blue-50 border-b text-center
+                                {/* Encabezados de productos (ítems) */}
+                                {items.map((p, idx) => {
+                                    const nombreProducto = ofertasFiltradas[idx]?.productoNombre ?? p.nombre;
+                                    return (
+                                        <th
+                                            key={p.id}
+                                            className="px-6 py-3 bg-blue-50 border-b text-center
                      sticky top-0 z-[40]
                      shadow-[inset_0_-1px_0_rgba(0,0,0,0.1)]
                      backdrop-blur-sm"
-                                    >
-                                        <div className="min-w-[200px] max-w-[240px] mx-auto">
-                                            <div className="font-bold text-slate-800 leading-tight">
-                                                {p.id}
+                                        >
+                                            <div className="min-w-[200px] max-w-[240px] mx-auto">
+                                                <div className="font-bold text-slate-800 leading-tight">{p.id}</div>
+                                                <div className="text-xs text-slate-600 leading-tight break-words whitespace-normal mt-0.5">
+                                                    {nombreProducto}
+                                                </div>
                                             </div>
-                                            <div
-                                                className="text-xs text-slate-600 leading-tight
-                         break-words whitespace-normal mt-0.5"
-                                            >
-                                                {nombreProducto}
-                                            </div>
-                                        </div>
-                                    </th>
-                                );
-                            })}
-                        </tr>
-                        </thead>
+                                        </th>
+                                    );
+                                })}
+                            </tr>
+                            </thead>
 
-                        <tbody>
-                        {conceptos.map((c) => {
-                            const conceptBandCls =
-                                (c.tipo === "band" ? "bg-blue-50 " : "") +
-                                (c.band === "y" ? "bg-yellow-50 " : "") +
-                                (c.band === "y-strong" ? "bg-yellow-100 " : "") ||
-                                "bg-white ";
-                            const conceptTxtCls = [
-                                c.strong ? "font-semibold" : "",
-                                c.emph ? "text-slate-900" : "text-slate-600",
-                                c.ital ? "italic" : "",
-                            ]
-                                .filter(Boolean)
-                                .join(" ");
+                            <tbody>
+                            {conceptos.map((c) => {
+                                const conceptBandCls =
+                                    (c.tipo === "band" ? "bg-blue-50 " : "") +
+                                    (c.band === "y" ? "bg-yellow-50 " : "") +
+                                    (c.band === "y-strong" ? "bg-yellow-100 " : "") || "bg-white ";
+                                const conceptTxtCls = [
+                                    c.strong ? "font-semibold" : "",
+                                    c.emph ? "text-slate-900" : "text-slate-600",
+                                    c.ital ? "italic" : "",
+                                ]
+                                    .filter(Boolean)
+                                    .join(" ");
 
-                            return (
-                                <tr key={c.id} className="group">
-                                    {/* Columna Concepto fija a la izquierda */}
-                                    <td
-                                        className={[
-                                            "px-6 py-3 align-top border-b",
-                                            conceptBandCls,
-                                            conceptTxtCls,
-                                            "w-[220px] md:w-[260px] px-4 whitespace-normal break-words leading-snug",
-                                            "sticky left-0 z-30",
-                                            "border-r border-slate-200",
-                                            "shadow-[6px_0_8px_-4px_rgba(0,0,0,0.25)]",
-                                            "font-semibold text-slate-800",
-                                        ].join(" ")}
-                                    >
-                                        {c.nombre}
-                                    </td>
+                                return (
+                                    <tr key={c.id} className="group">
+                                        {/* Columna Concepto fija a la izquierda */}
+                                        <td
+                                            className={[
+                                                "px-6 py-3 align-top border-b",
+                                                conceptBandCls,
+                                                conceptTxtCls,
+                                                "w-[220px] md:w-[260px] px-4 whitespace-normal break-words leading-snug",
+                                                "sticky left-0 z-30",
+                                                "border-r border-slate-200",
+                                                "shadow-[6px_0_8px_-4px_rgba(0,0,0,0.25)]",
+                                                "font-semibold text-slate-800",
+                                            ].join(" ")}
+                                        >
+                                            {c.nombre}
+                                        </td>
 
-                                    {/* Columna Rubro editable por fila */}
-                                    <RubroCell
-                                        clienteId={clienteId}
-                                        rubroId={c.id}
-                                        value={rubrosEdit?.[clienteId]?.[c.id] ?? ""}
-                                    />
+                                        {/* Columna Rubro editable por fila */}
+                                        <RubroCell
+                                            clienteId={clienteId}
+                                            rubroId={c.id}
+                                            value={rubrosEdit?.[clienteId]?.[c.id] ?? ""}
+                                        />
 
-                                    {/* Celdas de cada producto */}
-                                    {items.map((p) =>
+                                        {/* Celdas de cada producto */}
+                                        {items.map((p) =>
                                             c.editable ? (
                                                 <VentasBrutasCell
                                                     key={`${p.id}_${c.id}`}
@@ -442,17 +477,11 @@ const Section = React.memo(function Section({
                                                             const base = basePorcentaje(c.id, p);
                                                             const isMoney = typeof valor === "number";
                                                             const textClass =
-                                                                isMoney && negativo(valor)
-                                                                    ? "text-red-600"
-                                                                    : "text-slate-800";
+                                                                isMoney && negativo(valor) ? "text-red-600" : "text-slate-800";
                                                             return isMoney ? (
                                                                 <div className="flex items-baseline justify-end gap-2">
-                                  <span className={`font-medium ${textClass}`}>
-                                    {fmtCOP(valor)}
-                                  </span>
-                                                                    <span className="text-[11px] text-slate-500">
-                                    {pct(valor, base)}
-                                  </span>
+                                                                    <span className={`font-medium ${textClass}`}>{fmtCOP(valor)}</span>
+                                                                    <span className="text-[11px] text-slate-500">{pct(valor, base)}</span>
                                                                 </div>
                                                             ) : (
                                                                 <div className="flex items-baseline justify-end gap-2 text-slate-400">
@@ -463,14 +492,15 @@ const Section = React.memo(function Section({
                                                     </div>
                                                 </td>
                                             )
-                                    )}
-                                </tr>
-                            );
-                        })}
-                        </tbody>
-                    </table>
+                                        )}
+                                    </tr>
+                                );
+                            })}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
+            ) : null}
         </section>
     );
 });
@@ -520,10 +550,8 @@ export default function DescuentoOfertas() {
                 const data = Array.isArray(j) ? j : j?.data || [];
 
                 // totales del API (si existen)
-                const totalGlobalApi =
-                    typeof j?.totalGlobal === "number" ? j.totalGlobal : undefined;
-                const totalClientesApi =
-                    typeof j?.totalClientes === "number" ? j.totalClientes : undefined;
+                const totalGlobalApi = typeof j?.totalGlobal === "number" ? j.totalGlobal : undefined;
+                const totalClientesApi = typeof j?.totalClientes === "number" ? j.totalClientes : undefined;
 
                 if (abort) return;
 
@@ -603,9 +631,7 @@ export default function DescuentoOfertas() {
         if (!open) return [];
         const q = norm(debouncedQuery);
         if (!q) return clientes;
-        return clientes.filter(
-            (c) => norm(c.id).includes(q) || norm(c.nombre).includes(q)
-        );
+        return clientes.filter((c) => norm(c.id).includes(q) || norm(c.nombre).includes(q));
     }, [clientes, debouncedQuery, open]);
 
     const toggleCliente = (id) => {
@@ -645,9 +671,7 @@ export default function DescuentoOfertas() {
 
         // Solo muestra clientes que tengan al menos una oferta con el código buscado
         return base.filter(
-            (c) =>
-                Array.isArray(c.ofertas) &&
-                c.ofertas.some((o) => norm(o.codigoProducto).includes(q))
+            (c) => Array.isArray(c.ofertas) && c.ofertas.some((o) => norm(o.codigoProducto).includes(q))
         );
     }, [rubrosClientes, clientesSel, deferredRefQuery]);
 
@@ -680,9 +704,7 @@ export default function DescuentoOfertas() {
     const clientesFiltradosModal = useMemo(() => {
         const q = norm(debouncedQuery);
         if (!q) return clientes;
-        return clientes.filter(
-            (c) => norm(c.id).includes(q) || norm(c.nombre).includes(q)
-        );
+        return clientes.filter((c) => norm(c.id).includes(q) || norm(c.nombre).includes(q));
     }, [clientes, debouncedQuery]);
 
     /* Render principal */
@@ -705,9 +727,7 @@ export default function DescuentoOfertas() {
                                     className="w-full text-left pl-4 pr-10 py-2.5 rounded-full border border-slate-200 shadow-sm bg-white hover:bg-slate-50"
                                 >
                                     {textoSeleccion}
-                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
-                    ▼
-                  </span>
+                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">▼</span>
                                 </button>
 
                                 {open && (
@@ -780,9 +800,7 @@ export default function DescuentoOfertas() {
                                 Filtrar por referencia (código de producto)
                             </div>
                             <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  🧾
-                </span>
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🧾</span>
                                 <input
                                     type="text"
                                     value={refQuery}
@@ -981,19 +999,14 @@ export default function DescuentoOfertas() {
                                 <div className="mt-4 text-sm text-slate-700">
                                     Selección actual:{" "}
                                     <span className="font-semibold">
-                    {clientesSel.includes(ALL)
-                        ? "Todos los clientes"
-                        : `${clientesSel.length} cliente(s)`}
+                    {clientesSel.includes(ALL) ? "Todos los clientes" : `${clientesSel.length} cliente(s)`}
                   </span>
                                 </div>
                             </div>
                         </div>
 
                         <div className="px-5 py-4 border-t bg-slate-50 flex items-center justify-end gap-3">
-                            <button
-                                className="px-4 py-2 rounded-lg border border-slate-300 hover:bg-white"
-                                onClick={closeFiltersModal}
-                            >
+                            <button className="px-4 py-2 rounded-lg border border-slate-300 hover:bg-white" onClick={closeFiltersModal}>
                                 Cerrar
                             </button>
                             <button
