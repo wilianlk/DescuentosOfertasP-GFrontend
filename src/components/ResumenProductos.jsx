@@ -11,8 +11,7 @@ const fmtCOP = (n) =>
     });
 
 const pct = (num, den) => (den ? `${((num / den) * 100).toFixed(1)}%` : "-");
-const norm = (s) =>
-    (s || "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+const norm = (s) => (s || "").trim();
 
 /* ==== Conceptos en el orden del pantallazo ==== */
 const CONCEPTOS = [
@@ -81,11 +80,11 @@ export default function ResumenProductos() {
     const [clienteIdsInput, setClienteIdsInput] = useState("");
 
     const codigos = useMemo(
-        () => norm(codigosInput).split(/[\s,;]+/).map(s => s.trim()).filter(Boolean),
+        () => codigosInput.split(",").map(s => s.trim()).filter(Boolean),
         [codigosInput]
     );
     const clientes = useMemo(
-        () => norm(clienteIdsInput).split(/[\s,;]+/).map(s => s.trim()).filter(Boolean),
+        () => clienteIdsInput.split(",").map(s => s.trim()).filter(Boolean),
         [clienteIdsInput]
     );
 

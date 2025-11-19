@@ -203,10 +203,21 @@ const Section = React.memo(function Section({
 
     // filtro referencia diferido
     const refQ = norm(deferredRefQuery);
-    const ofertasFiltradas = useMemo(
-        () => (refQ ? ofertas.filter((o) => norm(o.codigoProducto).includes(refQ)) : ofertas),
-        [ofertas, refQ]
-    );
+    const ofertasFiltradas = useMemo(() => {
+        if (!refQ) return ofertas;
+
+        // dividir estrictamente por coma SIN espacios
+        const terms = deferredRefQuery
+            .split(",")
+            .map(t => norm(t))
+            .filter(Boolean);
+
+        return ofertas.filter((o) => {
+            const codeNorm = norm(o.codigoProducto);
+            // si alguno de los términos coincide parcial o totalmente
+            return terms.some(t => codeNorm.includes(t));
+        });
+    }, [ofertas, refQ]);
 
     const rubrosCliente = rubrosEdit?.[clienteId] || {};
 
@@ -663,15 +674,26 @@ export default function DescuentoOfertas() {
 
     const entries = useMemo(() => {
         const q = norm(deferredRefQuery);
+
         const base = clientesSel.includes(ALL)
             ? rubrosClientes
             : rubrosClientes.filter((c) => clientesSel.includes(c.clienteId));
 
         if (!q) return base;
 
-        // Solo muestra clientes que tengan al menos una oferta con el código buscado
-        return base.filter(
-            (c) => Array.isArray(c.ofertas) && c.ofertas.some((o) => norm(o.codigoProducto).includes(q))
+        const terms = deferredRefQuery
+            .split(",")
+            .map(t => norm(t))
+            .filter(Boolean);
+
+        if (terms.length === 0) return base;
+
+        return base.filter((c) =>
+            Array.isArray(c.ofertas) &&
+            c.ofertas.some((o) => {
+                const codeNorm = norm(o.codigoProducto);
+                return terms.some((t) => codeNorm.includes(t));
+            })
         );
     }, [rubrosClientes, clientesSel, deferredRefQuery]);
 
